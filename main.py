@@ -1,10 +1,9 @@
 # main.py
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
-from databases import Database
 
 DATABASE_URL = "sqlite:///./test.db"  # Используем SQLite для простоты
 
@@ -38,15 +37,19 @@ class TodoResponse(BaseModel):
     description: str
     completed: bool
 
+# Создаем объект SessionLocal для получения сессий
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 # Функция для получения сессии БД
 def get_db():
-    db = sessionmaker(bind=engine)()
+    db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
 @app.post("/todos", response_model=TodoResponse, status_code=201)
-def create_todo(todo: TodoCreate, db: Session = next(get_db())):
+def create_todo(todo: TodoCreate, db: Session = Depends(get_db)):
     db_todo = TodoModel(title=todo.title, description=todo.description)
     db.add(db_todo)
     db.commit()
@@ -54,14 +57,14 @@ def create_todo(todo: TodoCreate, db: Session = next(get_db())):
     return db_todo
 
 @app.get("/todos/{todo_id}", response_model=TodoResponse)
-def read_todo(todo_id: int, db: Session = next(get_db())):
+def read_todo(todo_id: int, db: Session = Depends(get_db)):
     todo = db.query(TodoModel).filter(TodoModel.id == todo_id).first()
     if todo is None:
         raise HTTPException(status_code=404, detail="Todo not found")
     return todo
 
 @app.put("/todos/{todo_id}", response_model=TodoResponse)
-def update_todo(todo_id: int, todo: TodoCreate, db: Session = next(get_db())):
+def update_todo(todo_id: int, todo: TodoCreate, db: Session = Depends(get_db)):
     db_todo = db.query(TodoModel).filter(TodoModel.id == todo_id).first()
     if db_todo is None:
         raise HTTPException(status_code=404, detail="Todo not found")
@@ -73,7 +76,7 @@ def update_todo(todo_id: int, todo: TodoCreate, db: Session = next(get_db())):
     return db_todo
 
 @app.delete("/todos/{todo_id}", status_code=204)
-def delete_todo(todo_id: int, db: Session = next(get_db())):
+def delete_todo(todo_id: int, db: Session = Depends(get_db)):
     db_todo = db.query(TodoModel).filter(TodoModel.id == todo_id).first()
     if db_todo is None:
         raise HTTPException(status_code=404, detail="Todo not found")
